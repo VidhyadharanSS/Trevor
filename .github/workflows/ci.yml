@@ -130,6 +130,42 @@ jobs:
                   # local runs surface the issue, but never block CI.
                   print(f"::notice::build.frontendDist not present yet: {fd} (expected; restored from artifact)")
 
+          # --- 4. plugins.* config shape -----------------------------------
+          # Tauri v2 plugins fall into two categories:
+          #
+          #   * "configurable" — accept a JSON object describing scopes,
+          #     endpoints, etc.  These MAY appear under `plugins` with a
+          #     non-empty object value.
+          #   * "unit"         — accept no configuration.  Tauri's serde
+          #     deserializer rejects ANY value (including `{}`) for these
+          #     and the app crashes at startup with:
+          #         PluginInitialization("<name>", "invalid type: map,
+          #         expected unit")
+          #
+          # Listing a unit plugin under `plugins` at all is an error — the
+          # crate is activated by `.plugin(tauri_plugin_X::init())` in Rust;
+          # the JSON entry adds nothing and breaks runtime.
+          CONFIGURABLE_PLUGINS = {
+              "fs", "http", "shell", "updater", "cli", "deep-link",
+              "single-instance",
+          }
+          for name, value in (conf.get("plugins") or {}).items():
+              if name in CONFIGURABLE_PLUGINS:
+                  if not isinstance(value, dict) or not value:
+                      errors.append(
+                          f"plugins.{name} is configurable but its value is "
+                          f"empty/non-object — either supply a config object "
+                          f"or remove the key entirely"
+                      )
+              else:
+                  errors.append(
+                      f"plugins.{name} is a unit plugin (no config schema). "
+                      f"Tauri will crash at startup with `invalid type: map, "
+                      f"expected unit`. Remove the `\"{name}\": ...` entry — "
+                      f"the plugin is activated from Rust via "
+                      f"`tauri_plugin_{name.replace('-', '_')}::init()`."
+                  )
+
           if errors:
               print("::error::Tauri config validation failed:")
               for e in errors:
