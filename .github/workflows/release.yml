@@ -144,7 +144,11 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
-          key: ${{ matrix.label }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          # Include tauri.conf.json + capabilities so config edits invalidate
+          # the cache. Without this, swatinem/rust-cache restores a stale
+          # target/ that contains the previously compiled (and embedded)
+          # Tauri config, producing binaries that ignore config fixes.
+          key: ${{ matrix.label }}-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/tauri.conf.json', 'src-tauri/capabilities/**') }}
 
       # ── Linux system deps (both x86_64 and arm64 use ubuntu-22.04 image) ─
       - name: Install Linux system dependencies
