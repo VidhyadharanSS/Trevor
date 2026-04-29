@@ -70,10 +70,36 @@ jobs:
         working-directory: src-tauri
         run: cargo fmt --check
 
+      # Fast guard (≈2 s) that prevents the most common Tauri pitfall:
+      # a Cargo feature flag on the `tauri` crate that has no matching
+      # opt-in inside `tauri.conf.json` (or vice versa). Catching this
+      # here saves a full clippy/check cycle (~2 min) on every drift.
+      - name: Validate Tauri feature ↔ config consistency
+        working-directory: src-tauri
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, re, sys, pathlib
+          cargo  = pathlib.Path("Cargo.toml").read_text()
+          conf   = json.loads(pathlib.Path("tauri.conf.json").read_text())
+          m      = re.search(r'^\s*tauri\s*=\s*\{[^}]*features\s*=\s*\[([^\]]*)\]', cargo, re.M)
+          feats  = re.findall(r'"([^"]+)"', m.group(1)) if m else []
+          app    = conf.get("app", {})
+          errors = []
+          if "macos-private-api" in feats and not app.get("macOSPrivateApi"):
+              errors.append("Cargo enables `macos-private-api` but tauri.conf.json#app.macOSPrivateApi is not true")
+          if app.get("macOSPrivateApi") and "macos-private-api" not in feats:
+              errors.append("tauri.conf.json#app.macOSPrivateApi=true but Cargo does not enable `macos-private-api`")
+          if errors:
+              print("::error::Tauri feature/config drift detected:")
+              for e in errors: print(f"  - {e}")
+              sys.exit(1)
+          print(f"OK — tauri features: {feats or '[]'}")
+          PY
+
       - name: cargo clippy
         working-directory: src-tauri
         run: cargo clippy --all-targets -- -D warnings
-        continue-on-error: true
 
       - name: cargo check
         working-directory: src-tauri
