@@ -15,12 +15,15 @@ src-tauri/gen/
 src-tauri/WixTools/
 src-tauri/Cargo.lock.bak
 
-# ─── Generated icons (regenerated in CI from icons/icon.svg) ───────────────
-src-tauri/icons/*.png
-src-tauri/icons/*.ico
-src-tauri/icons/*.icns
-!src-tauri/icons/icon.svg
-!src-tauri/icons/.gitkeep
+# ─── Tauri icons ───────────────────────────────────────────────────────────
+# Icons referenced from `tauri.conf.json#bundle.icon` MUST be tracked in
+# git — `tauri::generate_context!()` validates their presence at compile
+# time. Regenerate the full set after editing `icon.svg`:
+#
+#   python3 -c "import cairosvg; cairosvg.svg2png(url='src-tauri/icons/icon.svg', write_to='/tmp/master.png', output_width=1024, output_height=1024)"
+#   npx tauri icon /tmp/master.png --output src-tauri/icons
+#
+# (icons/ is intentionally NOT ignored.)
 
 # ─── TypeScript ────────────────────────────────────────────────────────────
 *.tsbuildinfo

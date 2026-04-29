@@ -83,31 +83,59 @@ jobs:
         working-directory: src-tauri
         run: cargo fmt --check
 
-      # Fast guard (≈2 s) that prevents the most common Tauri pitfall:
-      # a Cargo feature flag on the `tauri` crate that has no matching
-      # opt-in inside `tauri.conf.json` (or vice versa). Catching this
-      # here saves a full clippy/check cycle (~2 min) on every drift.
-      - name: Validate Tauri feature ↔ config consistency
+      # Fast pre-flight guard (≈2 s) that catches the most common Tauri
+      # pitfalls *before* the slow clippy/check cycle (~2 min):
+      #
+      #   1. Cargo feature ↔ tauri.conf.json drift (e.g. `macos-private-api`).
+      #   2. Missing referenced files: every icon listed under `bundle.icon`
+      #      and the `build.frontendDist` directory must exist on disk —
+      #      otherwise `tauri::generate_context!()` panics at macro-expansion
+      #      time deep inside the compile, with a confusing error.
+      #
+      # If you reference a new file from tauri.conf.json, commit it. If you
+      # remove a file, drop the reference. This guard fails fast either way.
+      - name: Validate Tauri config (features + referenced files)
         working-directory: src-tauri
         shell: bash
         run: |
           python3 - <<'PY'
           import json, re, sys, pathlib
+          here   = pathlib.Path(".").resolve()
           cargo  = pathlib.Path("Cargo.toml").read_text()
           conf   = json.loads(pathlib.Path("tauri.conf.json").read_text())
+          errors = []
+
+          # --- 1. Cargo feature ↔ config drift -----------------------------
           m      = re.search(r'^\s*tauri\s*=\s*\{[^}]*features\s*=\s*\[([^\]]*)\]', cargo, re.M)
           feats  = re.findall(r'"([^"]+)"', m.group(1)) if m else []
           app    = conf.get("app", {})
-          errors = []
           if "macos-private-api" in feats and not app.get("macOSPrivateApi"):
               errors.append("Cargo enables `macos-private-api` but tauri.conf.json#app.macOSPrivateApi is not true")
           if app.get("macOSPrivateApi") and "macos-private-api" not in feats:
               errors.append("tauri.conf.json#app.macOSPrivateApi=true but Cargo does not enable `macos-private-api`")
+
+          # --- 2. Bundle icon files exist ----------------------------------
+          for icon in conf.get("bundle", {}).get("icon", []):
+              p = (here / icon).resolve()
+              if not p.is_file():
+                  errors.append(f"bundle.icon references missing file: {icon}  (looked at {p})")
+
+          # --- 3. frontendDist directory exists ----------------------------
+          fd = conf.get("build", {}).get("frontendDist")
+          if fd:
+              p = (here / fd).resolve()
+              if not p.is_dir():
+                  # Not fatal here — the `Download frontend dist` step above
+                  # is responsible for materialising it. Only warn so future
+                  # local runs surface the issue, but never block CI.
+                  print(f"::notice::build.frontendDist not present yet: {fd} (expected; restored from artifact)")
+
           if errors:
-              print("::error::Tauri feature/config drift detected:")
-              for e in errors: print(f"  - {e}")
+              print("::error::Tauri config validation failed:")
+              for e in errors:
+                  print(f"  - {e}")
               sys.exit(1)
-          print(f"OK — tauri features: {feats or '[]'}")
+          print(f"OK — tauri features: {feats or '[]'}, icons: {len(conf.get('bundle', {}).get('icon', []))} present")
           PY
 
       - name: cargo clippy
