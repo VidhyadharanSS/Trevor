@@ -105,6 +105,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # macOS first so GitHub schedules it before other matrix legs.
+          # `universal-apple-darwin` is a Tauri-only triple; rustup needs
+          # both real targets installed and Tauri merges them with lipo.
+          - label: macos-universal
+            os: macos-14
+            rust_target: aarch64-apple-darwin,x86_64-apple-darwin
+            tauri_args: "--target universal-apple-darwin"
           - label: linux-x86_64
             os: ubuntu-22.04
             rust_target: x86_64-unknown-linux-gnu
@@ -113,10 +120,6 @@ jobs:
             os: ubuntu-22.04-arm
             rust_target: aarch64-unknown-linux-gnu
             tauri_args: ""
-          - label: macos-universal
-            os: macos-14
-            rust_target: universal-apple-darwin
-            tauri_args: "--target universal-apple-darwin"
           - label: windows-x86_64
             os: windows-latest
             rust_target: x86_64-pc-windows-msvc
@@ -141,7 +144,7 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
-          key: ${{ matrix.label }}
+          key: ${{ matrix.label }}-${{ hashFiles('src-tauri/Cargo.lock') }}
 
       # ── Linux system deps (both x86_64 and arm64 use ubuntu-22.04 image) ─
       - name: Install Linux system dependencies
@@ -178,6 +181,9 @@ jobs:
           # Set APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD secrets later
           # to enable signed builds.
           CI: true
+          # On the arm64 Linux runner, AppImageTool's strip step can fail
+          # against cross-arch binaries — skip it.
+          NO_STRIP: ${{ matrix.label == 'linux-arm64' && 'true' || '' }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.tauri_args }}
