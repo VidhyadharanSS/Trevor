@@ -58,7 +58,11 @@ fn entry_from_path(path: &Path) -> Result<FileEntry, String> {
         name,
         path: path.to_string_lossy().to_string(),
         is_directory: metadata.is_dir(),
-        size: if metadata.is_file() { metadata.len() } else { 0 },
+        size: if metadata.is_file() {
+            metadata.len()
+        } else {
+            0
+        },
         modified_at: metadata.modified().map(to_epoch_ms).unwrap_or(0),
         created_at: metadata.created().map(to_epoch_ms).unwrap_or(0),
         children: None,
